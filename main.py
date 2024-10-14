@@ -8,6 +8,7 @@ from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
 import gspread
+from gspread.utils import ExportFormat
 from oauth2client.service_account import ServiceAccountCredentials
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 import logging
@@ -19,10 +20,12 @@ oauth_file_path = os.getenv('OAUTH_FILE_PATH')
 sender_email = os.getenv('SENDER_EMAIL')
 sender_password = os.getenv('SENDER_PASSWORD')
 receiver_email = os.getenv('RECEIVER_EMAIL')
-cc_list = os.getenv('CC_LIST').split(',')
+cc_list = os.getenv('CC_LIST').split(', ')
 email_subject = f"{os.getenv('EMAIL_SUBJECT')} - {datetime.now().strftime('%Y%m%d')}"
 email_body = os.getenv('EMAIL_BODY')
 
+print(receiver_email)
+print(cc_list)
 
 CRED_FILE_PATH = oauth_file_path
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -39,7 +42,6 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger()
-
 
 @retry(stop=stop_after_attempt(5), wait=wait_fixed(120),
        retry=retry_if_exception_type(requests.exceptions.RequestException))
@@ -72,8 +74,8 @@ def send_email_with_attachment(file_path):
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = receiver_email
-    msg['Subject'] = email_subject
     msg['Cc'] = ', '.join(cc_list)
+    msg['Subject'] = email_subject
 
     msg.attach(MIMEText(email_body, 'plain'))
 
@@ -96,7 +98,8 @@ def send_email_with_attachment(file_path):
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
     server.login(sender_email, sender_password)
-    server.sendmail(sender_email, receiver_email, text)
+    recipients = [receiver_email] + cc_list
+    server.sendmail(sender_email, recipients, text)
     server.quit()
     logger.info('Email sent successfully')
 
@@ -138,13 +141,13 @@ def parse_xml_content(xml_content):
         if genre is None:
             logger.warning("Missing tag: TEMATYKA. Genre field will be empty.")
 
-        tx_day_text = tx_day.text if tx_day is not None else ""
-        tx_time_text = tx_time.text if tx_time is not None else ""
-        epg_description_text = epg_description.text if epg_description is not None else ""
-        episode_id_text = episode_id.text if episode_id is not None else ""
-        prod_year_text = prod_year.text if prod_year is not None else ""
-        rating_text = rating.text if rating is not None else ""
-        genre_text = genre.text if genre is not None else ""
+        tx_day_text = tx_day.text.strip("\t") if tx_day is not None else ""
+        tx_time_text = tx_time.text.strip("\t") if tx_time is not None else ""
+        epg_description_text = epg_description.text.strip("\t") if epg_description is not None else ""
+        episode_id_text = episode_id.text.strip("\t") if episode_id is not None else ""
+        prod_year_text = prod_year.text.strip("\t") if prod_year is not None else ""
+        rating_text = rating.text.strip("\t") if rating is not None else ""
+        genre_text = genre.text.strip("\t") if genre is not None else ""
 
         data_row = [
             tx_day_text,
@@ -175,6 +178,18 @@ def save_data_to_txt(data_to_save, output_dir):
     return file_path
 
 
+def save_data_to_xl(data_to_save, output_dir):
+    filename = f"TVPPol_output_{CURRENT_DATE}.xlsx"
+    file_path = output_dir / filename
+
+    if file_path.exists():
+        file_path.unlink()
+    with file_path.open('wb') as file:
+        file.write(data_to_save)
+    logger.info(f"Data saved to {file_path}")
+    return file_path
+
+
 creds = ServiceAccountCredentials.from_json_keyfile_name(CRED_FILE_PATH, SCOPE)
 client = gspread.authorize(creds)
 sheet = client.open(SPREADSHEET_NAME).sheet1
@@ -193,5 +208,10 @@ sheet_data = sheet.get("A2:H")
 
 output_directory = Path.cwd()
 saved_file_path = save_data_to_txt(sheet_data, output_directory)
+export_file = client.open(SPREADSHEET_NAME).export(format=ExportFormat.EXCEL)
 
-send_email_with_attachment(saved_file_path)
+excel_path = save_data_to_xl(export_file, output_directory)
+send_email_with_attachment(excel_path)
+
+
+# send_email_with_attachment(saved_file_path)
