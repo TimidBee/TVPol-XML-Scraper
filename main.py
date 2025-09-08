@@ -24,9 +24,6 @@ cc_list = os.getenv('CC_LIST').split(', ')
 email_subject = f"{os.getenv('EMAIL_SUBJECT')} - {datetime.now().strftime('%Y%m%d')}"
 email_body = os.getenv('EMAIL_BODY')
 
-print(receiver_email)
-print(cc_list)
-
 CRED_FILE_PATH = oauth_file_path
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 SPREADSHEET_NAME = "TVPOL Sheets Scraper"
@@ -207,11 +204,13 @@ update_google_sheet(sheet, all_results)
 sheet_data = sheet.get("A2:H")
 
 output_directory = Path.cwd()
-saved_file_path = save_data_to_txt(sheet_data, output_directory)
+# saved_file_path = save_data_to_txt(sheet_data, output_directory)
 export_file = client.open(SPREADSHEET_NAME).export(format=ExportFormat.EXCEL)
 
 excel_path = save_data_to_xl(export_file, output_directory)
 send_email_with_attachment(excel_path)
 
+excel_path.unlink()
+# Path(LOG_FILE).unlink()
 
 # send_email_with_attachment(saved_file_path)
